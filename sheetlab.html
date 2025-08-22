@@ -1,0 +1,1190 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SheetLab — MusicXML Editor & Viewer</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="preconnect" href="https://unpkg.com" crossorigin>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #161a22;
+      --panel-2: #11151c;
+      --text: #e6e9ef;
+      --muted: #aab1bd;
+      --brand: #7aa2f7;
+      --brand-2: #89ddff;
+      --accent: #c3e88d;
+      --danger: #ff757f;
+      --warning: #ffd580;
+      --ok: #7ee7a6;
+      --border: #233143;
+      --chip: #1e2530;
+      --chip-b: #283243;
+      --shadow: 0 10px 24px rgba(0,0,0,0.35);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font: 14px/1.35 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, 'Noto Sans', 'Helvetica Neue', Arial, 'Apple Color Emoji', 'Segoe UI Emoji';
+      color: var(--text);
+      background: radial-gradient(1200px 1200px at 80% -200px, #1b2230 0, var(--bg) 60%);
+      overflow: hidden;
+    }
+    #app {
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+    header {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px;
+      padding: 10px 12px;
+      background: linear-gradient(180deg, #141924, #101521);
+      border-bottom: 1px solid var(--border);
+      align-items: center;
+      box-shadow: var(--shadow);
+      position: relative;
+      z-index: 2;
+    }
+    .brand {
+      display: flex; align-items: center; gap: 10px;
+      font-weight: 700; letter-spacing: .2px;
+    }
+    .brand .mark {
+      width: 28px; height: 28px; border-radius: 8px;
+      background: conic-gradient(from 170deg at 45% 45%, var(--brand), var(--brand-2), var(--accent));
+      box-shadow: 0 0 0 2px #0d1220 inset, 0 6px 16px rgba(0,0,0,.4);
+    }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .toolbar .group { display:flex; gap:6px; background: var(--panel); padding:6px; border-radius:10px; border: 1px solid var(--border); }
+    button, .chip, select, input[type="number"], input[type="text"] {
+      background: var(--chip);
+      color: var(--text);
+      border: 1px solid var(--chip-b);
+      padding: 8px 10px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: .15s ease;
+      font-weight: 600;
+    }
+    button:hover, select:hover { filter: brightness(1.08); }
+    button:active { transform: translateY(1px); }
+    button.ghost {
+      background: transparent;
+      border-color: var(--border);
+    }
+    button.primary {
+      background: linear-gradient(180deg, var(--brand-2), var(--brand));
+      color: #081018;
+      border: 0;
+    }
+    input[type="range"] { width: 160px; }
+    input[type="file"] { display: none; }
+    .filelabel {
+      background: var(--chip);
+      padding: 8px 10px;
+      border: 1px dashed var(--chip-b);
+      border-radius: 10px;
+      cursor: pointer;
+      color: var(--text);
+      font-weight: 600;
+    }
+    .container {
+      display: grid;
+      grid-template-columns: 300px 1fr 360px;
+      gap: 12px;
+      height: calc(100vh - 120px);
+      padding: 12px;
+    }
+    aside#left, aside#right, main {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .pane-head {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel-2);
+      font-weight: 700;
+      position: sticky; top: 0;
+      z-index: 1;
+    }
+    .pane-body { padding: 12px; overflow: auto; }
+    .palette { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .palette button { padding: 10px; }
+    .palette .active { outline: 2px solid var(--brand-2); }
+  .piano { display: flex; gap: 2px; padding: 8px; background: #0b0f16; border: 1px solid var(--border); border-radius: 10px; }
+  .key { position: relative; width: 22px; height: 80px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; }
+  .key.black { width: 16px; height: 50px; background: #111827; border-color: #0b1220; margin-left: -8px; margin-right: -8px; z-index: 2; }
+  .key[aria-selected="true"] { outline: 2px solid var(--brand-2); outline-offset: 1px; }
+  .key.dragging { opacity: .7; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    #score-wrap {
+      position: relative; overflow: auto; flex: 1; background: #0c1018;
+      display: grid; place-items: start center;
+    }
+    #score {
+      margin: 20px;
+      transform-origin: top center;
+  /* Ensure container has measurable width for OSMD layout */
+  width: 100%;
+    }
+    .statusbar {
+      padding: 10px 12px;
+      border-top: 1px solid var(--border);
+      background: var(--panel-2);
+      display: flex; gap: 16px; align-items: center; justify-content: space-between;
+    }
+    .help {
+      color: var(--muted);
+    }
+    .list {
+      display: grid; gap: 8px;
+    }
+    .measure-item {
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #0e141f;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .measure-item[aria-selected="true"] {
+      border-color: var(--brand-2);
+      box-shadow: 0 0 0 2px rgba(137,221,255,.25);
+    }
+    textarea {
+      width: 100%;
+      min-height: 120px;
+      border-radius: 10px;
+      background: #0c1018;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 10px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    }
+    .kbd { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; background: #0b0f16; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--border); color: var(--brand-2); }
+    .muted { color: var(--muted); }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .grow { flex: 1; }
+    /* small devices */
+    @media (max-width: 1100px) {
+      .container { grid-template-columns: 1fr; height: auto; overflow: auto; }
+      aside#right { order: 3; }
+      main { order: 2; }
+      aside#left { order: 1; }
+      body { overflow: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div class="brand">
+        <div class="mark" aria-hidden="true"></div>
+        <div>SheetLab</div>
+      </div>
+      <div class="toolbar">
+        <div class="group">
+          <button id="btnNew" title="New blank score">New</button>
+          <label class="filelabel" for="fileInput">Import MusicXML</label>
+          <input id="fileInput" type="file" accept=".musicxml,.xml,.mxl" />
+          <button id="btnExport" title="Download MusicXML">Export</button>
+          <button id="btnUndo" class="ghost" title="Undo">Undo</button>
+          <button id="btnRedo" class="ghost" title="Redo">Redo</button>
+        </div>
+        <div class="group">
+          <button id="btnPlay" title="Play from start">▶︎</button>
+          <button id="btnStop" title="Stop">■</button>
+          <button id="btnPlaySelected" class="ghost" title="Play selected measure">Sel ▶︎</button>
+          <button id="btnPlayFromSelected" class="ghost" title="Play from selected">▶︎ from sel</button>
+          <label class="chip">Tempo <input id="tempo" type="number" min="30" max="240" value="100" style="width:70px"></label>
+        </div>
+        <div class="group">
+          <label class="chip">Zoom <input id="zoom" type="range" min="40" max="180" value="100"></label>
+          <label class="chip">Transpose <input id="transpose" type="range" min="-12" max="12" value="0"></label>
+          <select id="selectKey">
+            <option value="0">Key: C / Am</option>
+            <option value="1">Key: G / Em (+1)</option>
+            <option value="2">Key: D / Bm (+2)</option>
+            <option value="3">Key: A / F#m (+3)</option>
+            <option value="4">Key: E / C#m (+4)</option>
+            <option value="5">Key: B / G#m (+5)</option>
+            <option value="6">Key: F# / D#m (+6)</option>
+            <option value="7">Key: C# / A#m (+7)</option>
+            <option value="-1">Key: F / Dm (-1)</option>
+            <option value="-2">Key: Bb / Gm (-2)</option>
+            <option value="-3">Key: Eb / Cm (-3)</option>
+            <option value="-4">Key: Ab / Fm (-4)</option>
+            <option value="-5">Key: Db / Bbm (-5)</option>
+            <option value="-6">Key: Gb / Ebm (-6)</option>
+            <option value="-7">Key: Cb / Abm (-7)</option>
+          </select>
+          <select id="selectTime">
+            <option value="4/4">Time: 4/4</option>
+            <option value="3/4">3/4</option>
+            <option value="6/8">6/8</option>
+            <option value="2/4">2/4</option>
+            <option value="12/8">12/8</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <a class="chip ghost" href="https://github.com/opensheetmusicdisplay/opensheetmusicdisplay" target="_blank" rel="noreferrer">Powered by OSMD</a>
+      </div>
+    </header>
+
+    <div class="container">
+      <aside id="left">
+        <div class="pane-head">Note Palette</div>
+        <div class="pane-body">
+          <div class="palette" id="paletteDur">
+            <button data-dur="w" title="Whole">𝅝</button>
+            <button data-dur="h" title="Half">𝅗𝅥</button>
+            <button data-dur="q" title="Quarter">𝅘𝅥</button>
+            <button data-dur="e" title="Eighth">𝅘𝅥𝅮</button>
+            <button data-dur="s" title="Sixteenth">𝅘𝅥𝅯</button>
+            <button data-dur="r" title="Rest">Rest</button>
+          </div>
+          <div style="height:10px"></div>
+          <div class="palette" id="paletteAcc">
+            <button data-acc="n">♮</button>
+            <button data-acc="#">♯</button>
+            <button data-acc="b">♭</button>
+          </div>
+          <div style="height:10px"></div>
+          <div class="row">
+            <span class="chip">Staff
+              <select id="selectStaff" title="Choose staff (Treble=1, Bass=2)">
+                <option value="1">Treble (1)</option>
+                <option value="2">Bass (2)</option>
+              </select>
+            </span>
+          </div>
+          <div style="height:10px"></div>
+          <div>
+            <div class="muted" style="margin-bottom:6px;">Piano: click to select pitch or drag a key onto the score</div>
+            <div id="piano" class="piano" aria-label="Piano keyboard"></div>
+          </div>
+          <div style="height:10px"></div>
+          <div class="row">
+            <label class="chip">Octave <input id="octave" type="number" min="1" max="7" value="4" style="width:64px"></label>
+            <button id="btnInsert" class="primary">Insert at caret</button>
+          </div>
+          <p class="muted">Tip: choose a duration and accidental, set octave, then click "Insert". Use the measure editor on the right for fine-grained control.</p>
+          <hr style="border-color: var(--border)">
+          <div class="list" id="measureList"></div>
+        </div>
+      </aside>
+
+      <main>
+        <div class="pane-head">Score</div>
+        <div id="score-wrap">
+          <div id="score"></div>
+        </div>
+      </main>
+
+      <aside id="right">
+        <div class="pane-head">Measure Editor</div>
+        <div class="pane-body">
+          <p class="help">
+            Edit the selected measure using simple tokens. Notes: <span class="kbd">C4/q</span>, <span class="kbd">D#4/e</span>. Rests: <span class="kbd">R/q</span>.
+            Staff suffix: <span class="kbd">@1</span> treble, <span class="kbd">@2</span> bass, e.g. <span class="kbd">C4@1/q</span>, <span class="kbd">R@2/h</span>.
+            Chords: <span class="kbd">[C4,E4,G4]@1/q</span>. Ties: append <span class="kbd">~e</span> like <span class="kbd">C4/q~e</span> or <span class="kbd">[C4,E4]@2/h~q</span>.
+            Durations: <span class="kbd">w, h, q, e, s</span>. Comma-separated tokens fill the measure.
+          </p>
+          <div class="row">
+            <div class="chip">Selected measure: <span id="selMeasure">1</span>/<span id="totalMeasures">1</span></div>
+            <button id="btnAddMeasure">+ Add</button>
+            <button id="btnDeleteMeasure" class="ghost">Delete</button>
+          </div>
+          <textarea id="measureTokens" spellcheck="false"></textarea>
+          <div class="row" style="margin-top:8px;">
+            <button id="btnApply" class="primary">Apply Changes</button>
+            <button id="btnRevert" class="ghost">Revert</button>
+            <span id="msg" class="muted"></span>
+          </div>
+          <hr style="border-color: var(--border)">
+          <p class="muted">Keyboard: arrows change selected measure. <span class="kbd">Ctrl/Cmd+Z</span> undo, <span class="kbd">Ctrl/Cmd+Y</span> redo. Space: play/stop.</p>
+        </div>
+      </aside>
+    </div>
+
+    <div class="statusbar">
+      <div id="status">Ready.</div>
+      <div class="muted">Made with <span aria-hidden="true">♪</span> in your browser.</div>
+    </div>
+  </div>
+
+  <!-- Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay/build/opensheetmusicdisplay.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tone@14.8.49/build/Tone.js"></script>
+
+  <script>
+    // --- Utility helpers ---
+    const $ = (sel, root=document) => root.querySelector(sel);
+    const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+    const DUR = { w:1920, h:960, q:480, e:240, s:120 }; // divisions per MusicXML convention below
+    const DUR_NAME = { 1920:'whole', 960:'half', 480:'quarter', 240:'eighth', 120:'16th' };
+    const STEP_TO_SEMITONE = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 };
+    const SEMITONE_TO_STEP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const TYPE_TO_SYMBOL = { whole:'w', half:'h', quarter:'q', eighth:'e', '16th':'s' };
+  const SYMBOL_TO_TYPE = { w:'whole', h:'half', q:'quarter', e:'eighth', s:'16th' };
+
+    // --- App state ---
+    let osmd = null;
+    let musicXMLDoc = null;          // XMLDocument
+    let undoStack = [];
+    let redoStack = [];
+    let selectedMeasureIdx = 0;      // 0-based
+    let transposeSemis = 0;
+    let zoomPercent = 100;
+
+    // --- Initialization ---
+    window.addEventListener('DOMContentLoaded', async () => {
+      const OSMDCtor = (window.opensheetmusicdisplay && window.opensheetmusicdisplay.OpenSheetMusicDisplay)
+        || window.OpenSheetMusicDisplay;
+      if (!OSMDCtor) {
+        setStatus('Error: OpenSheetMusicDisplay failed to load.');
+        return;
+      }
+      osmd = new OSMDCtor('score', {
+        autoResize: false,
+        backend: 'svg',
+        drawTitle: false,
+        drawingParameters: 'compact',
+        pageBackgroundColor: '#0c1018',
+        defaultColorMusic: '#e6e9ef',
+        defaultColorRest: '#aab1bd',
+        defaultFontFamily: 'Bravura, Petaluma, Leland, system-ui',
+      });
+
+      bindUI();
+      newBlankScore();
+      render();
+    });
+
+    function bindUI() {
+      $('#btnNew').addEventListener('click', () => { pushUndo(); newBlankScore(); render(); setStatus('New score created.'); });
+      $('#btnExport').addEventListener('click', exportMusicXML);
+      $('#btnUndo').addEventListener('click', undo);
+      $('#btnRedo').addEventListener('click', redo);
+      $('#fileInput').addEventListener('change', onImportFile);
+      $('#btnPlay').addEventListener('click', playScore);
+      $('#btnStop').addEventListener('click', stopPlayback);
+  $('#btnPlaySelected').addEventListener('click', () => playScore({ mode: 'selected' }));
+  $('#btnPlayFromSelected').addEventListener('click', () => playScore({ mode: 'fromSelected' }));
+      $('#tempo').addEventListener('change', () => setStatus(`Tempo ${$('#tempo').value} bpm`));
+
+      $('#zoom').addEventListener('input', (e) => {
+        zoomPercent = parseInt(e.target.value, 10);
+        $('#score').style.transform = `scale(${zoomPercent/100})`;
+      });
+      $('#transpose').addEventListener('input', (e) => {
+        transposeSemis = parseInt(e.target.value, 10);
+        applyTransposePreview();
+      });
+      $('#selectKey').addEventListener('change', (e) => {
+        setKeySignature(parseInt(e.target.value,10));
+      });
+      $('#selectTime').addEventListener('change', (e) => {
+        const [beats, beatType] = e.target.value.split('/').map(Number);
+        setTimeSignature(beats, beatType);
+      });
+
+      // Palette
+      $('#paletteDur').addEventListener('click', (e) => {
+        if (e.target.closest('button')) {
+          $$('#paletteDur button').forEach(b => b.classList.remove('active'));
+          e.target.closest('button').classList.add('active');
+        }
+      });
+      $('#paletteAcc').addEventListener('click', (e) => {
+        if (e.target.closest('button')) {
+          $$('#paletteAcc button').forEach(b => b.classList.remove('active'));
+          e.target.closest('button').classList.add('active');
+        }
+      });
+      $('#btnInsert').addEventListener('click', insertAtCaret);
+  // Build piano UI
+  buildPiano();
+
+      // Measure editor
+      $('#btnAddMeasure').addEventListener('click', () => { pushUndo(); addMeasure(); render(); });
+      $('#btnDeleteMeasure').addEventListener('click', () => { pushUndo(); deleteMeasure(selectedMeasureIdx); render(); });
+      $('#btnApply').addEventListener('click', () => { pushUndo(); applyMeasureTokens(); });
+      $('#btnRevert').addEventListener('click', () => { updateMeasureEditor(); });
+
+      document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+        if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+        if (e.code === 'ArrowLeft') { selectMeasure(Math.max(0, selectedMeasureIdx-1)); }
+        if (e.code === 'ArrowRight') { const N = getMeasures().length; selectMeasure(Math.min(N-1, selectedMeasureIdx+1)); }
+      });
+    }
+
+    function setStatus(msg) { $('#status').textContent = msg; }
+
+    // --- Score creation & structure helpers ---
+    function newBlankScore() {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="3.1">
+  <work><work-title>Untitled</work-title></work>
+  <identification><encoding><software>SheetLab</software></encoding></identification>
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>480</divisions>
+        <key><fifths>0</fifths></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><rest/><duration>1920</duration><type>whole</type></note>
+    </measure>
+  </part>
+</score-partwise>`;
+      musicXMLDoc = new window.DOMParser().parseFromString(xml, 'application/xml');
+      undoStack = []; redoStack = [];
+      selectedMeasureIdx = 0;
+      transposeSemis = 0; $('#transpose').value = 0;
+      $('#zoom').value = 100; $('#score').style.transform = 'scale(1)';
+      updateMeasureList();
+    }
+
+  function getPart() {
+      // Prefer part with id P1, else fallback to first part in the score
+      return musicXMLDoc.querySelector('part[id="P1"]')
+        || musicXMLDoc.querySelector('score-partwise > part')
+        || musicXMLDoc.querySelector('part');
+    }
+    function getAttributes(measureEl) { return measureEl.querySelector('attributes'); }
+    function getMeasures() { return Array.from(getPart().querySelectorAll(':scope > measure')); }
+
+    function divisions() {
+      const attr = getAttributes(getMeasures()[0]);
+      return parseInt(attr.querySelector('divisions')?.textContent || '480', 10);
+    }
+    function ticksPerBeat() { return divisions(); }
+    function timeSig() {
+      const attr = getAttributes(getMeasures()[0]);
+      const beats = parseInt(attr.querySelector('time > beats')?.textContent || '4', 10);
+      const beatType = parseInt(attr.querySelector('time > beat-type')?.textContent || '4', 10);
+      return { beats, beatType };
+    }
+    function ticksPerMeasure() {
+      const { beats, beatType } = timeSig();
+      const qPerMeasure = (4/beatType) * beats; // number of quarter-notes per measure
+      return Math.round(qPerMeasure * divisions());
+    }
+
+    function setKeySignature(fifths) {
+      const attr = getAttributes(getMeasures()[0]);
+      let k = attr.querySelector('key');
+      if (!k) { k = musicXMLDoc.createElement('key'); attr.appendChild(k); }
+      let f = k.querySelector('fifths');
+      if (!f) { f = musicXMLDoc.createElement('fifths'); k.appendChild(f); }
+      f.textContent = String(fifths);
+      render();
+    }
+
+    function setTimeSignature(beats, beatType) {
+      const attr = getAttributes(getMeasures()[0]);
+      let t = attr.querySelector('time'); if (!t) { t = musicXMLDoc.createElement('time'); attr.appendChild(t); }
+      let b = t.querySelector('beats'); if (!b) { b = musicXMLDoc.createElement('beats'); t.appendChild(b); }
+      let bt = t.querySelector('beat-type'); if (!bt) { bt = musicXMLDoc.createElement('beat-type'); t.appendChild(bt); }
+      b.textContent = String(beats);
+      bt.textContent = String(beatType);
+      // normalize measures content lengths
+      fillOrTrimAllMeasures();
+      render();
+    }
+
+    function addMeasure() {
+      const part = getPart();
+      const m = musicXMLDoc.createElement('measure');
+      m.setAttribute('number', String(getMeasures().length + 1));
+      const rest = musicXMLDoc.createElement('note');
+      rest.appendChild(musicXMLDoc.createElement('rest'));
+      const dur = musicXMLDoc.createElement('duration'); dur.textContent = String(ticksPerMeasure());
+      rest.appendChild(dur);
+      const type = musicXMLDoc.createElement('type'); type.textContent = DUR_NAME[ticksPerMeasure()] || 'whole';
+      rest.appendChild(type);
+      m.appendChild(rest);
+      part.appendChild(m);
+      updateMeasureList();
+      selectMeasure(getMeasures().length - 1);
+    }
+
+    function deleteMeasure(idx) {
+      const measures = getMeasures();
+      if (measures.length <= 1) return;
+      measures[idx].remove();
+      // Renumber
+      getMeasures().forEach((m, i) => m.setAttribute('number', String(i+1)));
+      updateMeasureList();
+      selectMeasure(Math.max(0, idx-1));
+    }
+
+    function fillOrTrimAllMeasures() {
+      getMeasures().forEach(fillOrTrimMeasure);
+    }
+
+    function fillOrTrimMeasure(measureEl) {
+      // Sum durations advancing only on non-chord-leading notes
+      let total = 0;
+      const notes = Array.from(measureEl.querySelectorAll(':scope > note'));
+      for (const n of notes) {
+        const isChordContinuation = !!n.querySelector('chord');
+        if (!isChordContinuation) total += parseInt(n.querySelector('duration')?.textContent || '0', 10);
+      }
+      const tpm = ticksPerMeasure();
+      if (total < tpm) {
+        const rest = musicXMLDoc.createElement('note');
+        rest.appendChild(musicXMLDoc.createElement('rest'));
+        const dur = musicXMLDoc.createElement('duration'); dur.textContent = String(tpm - total);
+        rest.appendChild(dur);
+        const type = musicXMLDoc.createElement('type'); type.textContent = DUR_NAME[tpm - total] || 'quarter';
+        rest.appendChild(type);
+        measureEl.appendChild(rest);
+      } else if (total > tpm) {
+        // Remove from end until <= tpm
+        let running = total;
+        for (let i = notes.length - 1; i >= 0 && running > tpm; i--) {
+          const n = notes[i];
+          const d = parseInt(n.querySelector('duration')?.textContent || '0', 10);
+          const isChordContinuation = !!n.querySelector('chord');
+          n.remove();
+          if (!isChordContinuation) running -= d;
+        }
+        if (running < tpm) {
+          const rest = musicXMLDoc.createElement('note');
+          rest.appendChild(musicXMLDoc.createElement('rest'));
+          const dur = musicXMLDoc.createElement('duration'); dur.textContent = String(tpm - running);
+          rest.appendChild(dur);
+          const type = musicXMLDoc.createElement('type'); type.textContent = DUR_NAME[tpm - running] || 'quarter';
+          rest.appendChild(type);
+          const measureEl2 = measureEl; measureEl2.appendChild(rest);
+        }
+      }
+    }
+
+    function selectMeasure(idx) {
+      selectedMeasureIdx = idx;
+      $$('#measureList .measure-item').forEach((el, i) => el.setAttribute('aria-selected', i === idx ? 'true' : 'false'));
+      $('#selMeasure').textContent = String(idx+1);
+      $('#totalMeasures').textContent = String(getMeasures().length);
+      updateMeasureEditor();
+      scrollToMeasureInList();
+    }
+
+    function scrollToMeasureInList() {
+      const el = $$('#measureList .measure-item')[selectedMeasureIdx];
+      if (!el) return;
+      el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+
+    function updateMeasureList() {
+      const list = $('#measureList');
+      list.innerHTML = '';
+      getMeasures().forEach((m, i) => {
+        const item = document.createElement('div');
+        item.className = 'measure-item';
+        item.innerHTML = `<div>Measure ${i+1}</div><button class="ghost">Edit</button>`;
+        item.addEventListener('click', () => selectMeasure(i));
+        list.appendChild(item);
+      });
+      $('#totalMeasures').textContent = String(getMeasures().length);
+      $('#selMeasure').textContent = String(selectedMeasureIdx+1);
+    }
+
+    function updateMeasureEditor() {
+      const m = getMeasures()[selectedMeasureIdx];
+      const tokens = measureToTokens(m);
+      $('#measureTokens').value = tokens.join(', ');
+      $('#msg').textContent = '';
+    }
+
+    function applyMeasureTokens() {
+      try {
+  const input = $('#measureTokens').value.trim();
+  const tokens = input.length ? splitTokenList(input) : [];
+        tokensToMeasure(tokens, getMeasures()[selectedMeasureIdx]);
+        fillOrTrimMeasure(getMeasures()[selectedMeasureIdx]);
+        render();
+        setStatus('Measure updated.');
+        $('#msg').textContent = '';
+      } catch (err) {
+        console.error(err);
+        $('#msg').textContent = '⚠ ' + (err?.message || 'Parse error');
+        setStatus('Error: ' + (err?.message || 'Parse error'));
+      }
+    }
+
+    // --- Tokenization / Parsing ---
+    function measureToTokens(measureEl) {
+      const tokens = [];
+      const notes = Array.from(measureEl.querySelectorAll(':scope > note'));
+      let i = 0;
+      while (i < notes.length) {
+        const n = notes[i];
+        const dur = parseInt(n.querySelector('duration')?.textContent || '0',10);
+        const staff = parseInt(n.querySelector('staff')?.textContent || '1', 10);
+        const isRest = !!n.querySelector('rest');
+        const isChordCont = !!n.querySelector('chord');
+        if (isChordCont) { i++; continue; }
+        const tieStart = !!n.querySelector('tie[type="start"]');
+        const tieStop = !!n.querySelector('tie[type="stop"]');
+        // Collect chord notes at this position (including leading)
+        const chordPitches = [];
+        const collect = (noteEl) => {
+          if (noteEl.querySelector('rest')) return;
+          const step = noteEl.querySelector('step')?.textContent || 'C';
+          const alter = parseInt(noteEl.querySelector('alter')?.textContent || '0', 10);
+          const acc = alter === 1 ? '#' : alter === -1 ? 'b' : '';
+          const oct = noteEl.querySelector('octave')?.textContent || '4';
+          chordPitches.push(`${step}${acc}${oct}`);
+        };
+        collect(n);
+        let j = i + 1;
+        while (j < notes.length && !!notes[j].querySelector('chord')) {
+          collect(notes[j]);
+          j++;
+        }
+        const sym = durationSymbolFromNote(n);
+        if (isRest) {
+          tokens.push(`R@${staff}/${sym}`);
+        } else if (tieStop && !tieStart) {
+          // Append duration to previous token (ties extend previous)
+          if (tokens.length) {
+            tokens[tokens.length - 1] = tokens[tokens.length - 1] + sym;
+          } else {
+            // Fallback if no previous token (malformed), emit base
+            const base = (chordPitches.length > 1)
+              ? `[${chordPitches.join(',')}]@${staff}/${sym}`
+              : `${chordPitches[0]}@${staff}/${sym}`;
+            tokens.push(base);
+          }
+        } else {
+          if (chordPitches.length > 1) {
+            const base = `[${chordPitches.join(',')}]@${staff}/${sym}`;
+            tokens.push(base + (tieStart ? '~' : ''));
+          } else {
+            const base = `${chordPitches[0]}@${staff}/${sym}`;
+            tokens.push(base + (tieStart ? '~' : ''));
+          }
+        }
+        i = j;
+      }
+      return tokens;
+    }
+
+    function durationSymbolFromNote(noteEl) {
+      const type = noteEl.querySelector('type')?.textContent?.toLowerCase();
+      if (type && TYPE_TO_SYMBOL[type]) return TYPE_TO_SYMBOL[type];
+      // Fallback: derive from tick count and divisions
+      const d = parseInt(noteEl.querySelector('duration')?.textContent || '0', 10);
+      return durToSymbolTicks(d);
+    }
+    function durToSymbolTicks(d) {
+      const div = divisions();
+      const ratio = d / div;
+      const pairs = [ [4,'w'], [2,'h'], [1,'q'], [0.5,'e'], [0.25,'s'] ];
+      let best = 'q', bestDiff = Infinity;
+      for (const [r, sym] of pairs) {
+        const diff = Math.abs(ratio - r);
+        if (diff < bestDiff) { bestDiff = diff; best = sym; }
+      }
+      return best;
+    }
+    function typeFromTicks(d) {
+      const sym = durToSymbolTicks(d);
+      return SYMBOL_TO_TYPE[sym] || 'quarter';
+    }
+
+    function symbolToDur(sym) {
+      const s = sym.toLowerCase();
+      const div = divisions();
+      if (s === 'w') return 4 * div;
+      if (s === 'h') return 2 * div;
+      if (s === 'q') return 1 * div;
+      if (s === 'e') return Math.round(0.5 * div);
+      if (s === 's') return Math.round(0.25 * div);
+      const n = parseInt(s,10);
+      if (!isFinite(n) || n <= 0) throw new Error('Invalid duration: ' + sym);
+      return n;
+    }
+
+    function parseToken(tok) {
+      // Supported forms:
+      // R@2/q, R/q
+      // C#4@1/q
+      // [C4,E4,G4]@2/q
+      // Ties: append ~e like C4/q~e or [C4,E4]@1/q~e
+      const err = (m) => { throw new Error(m + ': ' + tok); };
+      const [lhsRaw, rhsRaw] = tok.split('/');
+      if (!rhsRaw) err('Missing duration');
+      const [lhs, tieStr] = [lhsRaw, rhsRaw];
+      const tieParts = tieStr.split('~').map(s => s.trim()).filter(Boolean);
+      const durations = tieParts.map(symbolToDur);
+
+      // Parse staff suffix @N
+      let staff = 1;
+      let noteSpec = lhs;
+      const mStaff = /^(.*)@([12])$/.exec(lhs);
+      if (mStaff) { noteSpec = mStaff[1]; staff = parseInt(mStaff[2],10); }
+
+      if (/^R$/i.test(noteSpec)) {
+        return durations.map((d,i) => ({ kind:'rest', staff, duration:d, tieStart: i===0 && durations.length>1, tieStop: i===durations.length-1 && durations.length>1 }));
+      }
+      if (noteSpec.startsWith('[')) {
+        const inner = noteSpec.replace(/^\[/,'').replace(/\]$/,'');
+        const pitches = inner.split(',').map(s => s.trim()).map(parsePitch);
+        return durations.map((d,i) => ({ kind:'chord', staff, duration:d, pitches, tieStart: i===0 && durations.length>1, tieStop: i===durations.length-1 && durations.length>1 }));
+      }
+      const pitch = parsePitch(noteSpec);
+      return durations.map((d,i) => ({ kind:'note', staff, duration:d, pitch, tieStart: i===0 && durations.length>1, tieStop: i===durations.length-1 && durations.length>1 }));
+    }
+
+    function parsePitch(text) {
+      // e.g., C#4, Db5, F4, B3
+      const m = /^([A-Ga-g])([#bn]?)(\d)$/.exec(text);
+      if (!m) throw new Error('Invalid pitch: ' + text);
+      const step = m[1].toUpperCase();
+      const acc = m[2] || '';
+      const octave = parseInt(m[3],10);
+      const alter = acc === '#' ? 1 : acc === 'b' ? -1 : 0;
+      return { step, alter, octave };
+    }
+
+    // Split a token list on commas not inside chord brackets [..]
+    function splitTokenList(text) {
+      const tokens = [];
+      let cur = '';
+      let depth = 0;
+      for (let i=0;i<text.length;i++) {
+        const ch = text[i];
+        if (ch === '[') { depth++; cur += ch; continue; }
+        if (ch === ']') { depth = Math.max(0, depth-1); cur += ch; continue; }
+        if (ch === ',' && depth === 0) {
+          if (cur.trim()) tokens.push(cur.trim());
+          cur = '';
+          continue;
+        }
+        cur += ch;
+      }
+      if (cur.trim()) tokens.push(cur.trim());
+      return tokens;
+    }
+
+    function tokensToMeasure(tokens, measureEl) {
+      // Clear existing notes
+      Array.from(measureEl.querySelectorAll(':scope > note')).forEach(n => n.remove());
+      const totalNeeded = ticksPerMeasure();
+      let total = 0;
+      for (const tok of tokens) {
+        const events = parseToken(tok);
+        for (const ev of events) {
+          if (ev.kind === 'rest') {
+            const noteEl = musicXMLDoc.createElement('note');
+            noteEl.appendChild(musicXMLDoc.createElement('rest'));
+            const dur = musicXMLDoc.createElement('duration'); dur.textContent = String(ev.duration); noteEl.appendChild(dur);
+            const type = musicXMLDoc.createElement('type'); type.textContent = typeFromTicks(ev.duration); noteEl.appendChild(type);
+            const staffEl = musicXMLDoc.createElement('staff'); staffEl.textContent = String(ev.staff); noteEl.appendChild(staffEl);
+            if (ev.tieStart) { const tie = musicXMLDoc.createElement('tie'); tie.setAttribute('type','start'); noteEl.appendChild(tie); }
+            if (ev.tieStop) { const tie = musicXMLDoc.createElement('tie'); tie.setAttribute('type','stop'); noteEl.appendChild(tie); }
+            measureEl.appendChild(noteEl);
+            total += ev.duration;
+          } else if (ev.kind === 'note') {
+            const noteEl = musicXMLDoc.createElement('note');
+            const pitch = musicXMLDoc.createElement('pitch');
+            const stepEl = musicXMLDoc.createElement('step'); stepEl.textContent = ev.pitch.step; pitch.appendChild(stepEl);
+            if (ev.pitch.alter) { const alt = musicXMLDoc.createElement('alter'); alt.textContent = String(ev.pitch.alter); pitch.appendChild(alt); }
+            const octEl = musicXMLDoc.createElement('octave'); octEl.textContent = String(ev.pitch.octave); pitch.appendChild(octEl);
+            noteEl.appendChild(pitch);
+            const dur = musicXMLDoc.createElement('duration'); dur.textContent = String(ev.duration); noteEl.appendChild(dur);
+            const type = musicXMLDoc.createElement('type'); type.textContent = typeFromTicks(ev.duration); noteEl.appendChild(type);
+            const staffEl = musicXMLDoc.createElement('staff'); staffEl.textContent = String(ev.staff); noteEl.appendChild(staffEl);
+            if (ev.tieStart) { const tie = musicXMLDoc.createElement('tie'); tie.setAttribute('type','start'); noteEl.appendChild(tie); }
+            if (ev.tieStop) { const tie = musicXMLDoc.createElement('tie'); tie.setAttribute('type','stop'); noteEl.appendChild(tie); }
+            measureEl.appendChild(noteEl);
+            total += ev.duration;
+          } else if (ev.kind === 'chord') {
+            // Leading note first
+            const makeNote = (p, isChordCont=false) => {
+              const noteEl = musicXMLDoc.createElement('note');
+              if (isChordCont) { noteEl.appendChild(musicXMLDoc.createElement('chord')); }
+              const pitch = musicXMLDoc.createElement('pitch');
+              const stepEl = musicXMLDoc.createElement('step'); stepEl.textContent = p.step; pitch.appendChild(stepEl);
+              if (p.alter) { const alt = musicXMLDoc.createElement('alter'); alt.textContent = String(p.alter); pitch.appendChild(alt); }
+              const octEl = musicXMLDoc.createElement('octave'); octEl.textContent = String(p.octave); pitch.appendChild(octEl);
+              noteEl.appendChild(pitch);
+              const dur = musicXMLDoc.createElement('duration'); dur.textContent = String(ev.duration); noteEl.appendChild(dur);
+              const type = musicXMLDoc.createElement('type'); type.textContent = typeFromTicks(ev.duration); noteEl.appendChild(type);
+              const staffEl = musicXMLDoc.createElement('staff'); staffEl.textContent = String(ev.staff); noteEl.appendChild(staffEl);
+              if (ev.tieStart) { const tie = musicXMLDoc.createElement('tie'); tie.setAttribute('type','start'); noteEl.appendChild(tie); }
+              if (ev.tieStop) { const tie = musicXMLDoc.createElement('tie'); tie.setAttribute('type','stop'); noteEl.appendChild(tie); }
+              return noteEl;
+            };
+            const [lead, ...rest] = ev.pitches;
+            measureEl.appendChild(makeNote(lead, false));
+            for (const p of rest) {
+              measureEl.appendChild(makeNote(p, true));
+            }
+            total += ev.duration; // advance only once for the chord
+          }
+        }
+      }
+      if (total > totalNeeded) throw new Error(`Measure overflow by ${total-totalNeeded} ticks; adjust durations.`);
+      // if underfull, filled later
+    }
+
+    // Palette insertion (append to current measure)
+    function insertAtCaret() {
+      const m = getMeasures()[selectedMeasureIdx];
+      const activeDurBtn = $('#paletteDur .active');
+      const d = activeDurBtn ? activeDurBtn.getAttribute('data-dur') : 'q';
+      const accBtn = $('#paletteAcc .active');
+      const acc = accBtn ? accBtn.getAttribute('data-acc') : 'n';
+      const octave = parseInt($('#octave').value, 10);
+      const staff = parseInt($('#selectStaff').value, 10) || 1;
+      let tok;
+      if (d === 'r') tok = `R@${staff}/${d==='r' ? 'q' : d}`; // default rest quarter if 'r'
+      if (d !== 'r') {
+        const baseStep = selectedPitch?.step || 'C';
+        const baseAlter = selectedPitch?.alter ?? (acc==='n'?0: acc==='#'?1:-1);
+        const baseOct = selectedPitch?.octave ?? octave;
+        const accSym = baseAlter === 1 ? '#' : baseAlter === -1 ? 'b' : '';
+        tok = `${baseStep}${accSym}${baseOct}@${staff}/${d}`;
+      }
+      // place token at end of measure editor text and apply
+      const textarea = $('#measureTokens');
+      const cur = textarea.value.trim();
+      const newVal = cur ? cur + ', ' + tok : tok;
+      textarea.value = newVal;
+      pushUndo();
+      applyMeasureTokens();
+    }
+
+    // --- Rendering ---
+  async function render() {
+      // Serialize to string (with transpose preview applied if needed)
+      const xml = new XMLSerializer().serializeToString(applyTranspose(musicXMLDoc, transposeSemis, true));
+      await osmd.load(xml);
+      await osmd.render();
+      $('#score').style.transform = `scale(${zoomPercent/100})`;
+      updateMeasureList(); // refresh labels count if changed
+    }
+
+    // --- Transpose ---
+    function applyTransposePreview() { render(); setStatus(`Transpose preview: ${transposeSemis >= 0 ? '+' : ''}${transposeSemis} semitones`); }
+
+  function applyTranspose(doc, semis, preview=false) {
+      if (!semis) return doc;
+      // Work on a clone for preview so undo/redo unaffected until export/save
+  const clone = doc.cloneNode(true);
+  // Apply transpose to all parts
+  const notes = clone.querySelectorAll('score-partwise part > measure > note pitch');
+      notes.forEach(pitch => {
+        const step = pitch.querySelector('step').textContent;
+        const alter = parseInt(pitch.querySelector('alter')?.textContent || '0', 10);
+        const octave = parseInt(pitch.querySelector('octave').textContent, 10);
+        const midi = stepAccOctToMidi(step, alter, octave);
+        const midi2 = midi + semis;
+        const { step: s2, alter: a2, octave: o2 } = midiToStepAccOct(midi2);
+        pitch.querySelector('step').textContent = s2;
+        if (a2) {
+          let alt = pitch.querySelector('alter'); if (!alt) { alt = clone.createElement('alter'); pitch.appendChild(alt); }
+          alt.textContent = String(a2);
+        } else {
+          const alt = pitch.querySelector('alter'); if (alt) alt.remove();
+        }
+        pitch.querySelector('octave').textContent = String(o2);
+      });
+      if (!preview) musicXMLDoc = clone;
+      return clone;
+    }
+
+    function stepAccOctToMidi(step, alter, oct) {
+      const base = STEP_TO_SEMITONE[step];
+      return (oct + 1) * 12 + base + alter;
+    }
+    function midiToStepAccOct(midi) {
+      const semi = midi % 12;
+      const octave = Math.floor(midi / 12) - 1;
+      // choose sharp spelling by default
+      const name = SEMITONE_TO_STEP[(semi+12)%12];
+      const step = name[0];
+      const alter = name.length > 1 ? 1 : 0;
+      return { step, alter, octave };
+    }
+
+    // --- Import / Export ---
+    async function onImportFile(ev) {
+      const f = ev.target.files[0];
+      if (!f) return;
+      const text = await f.text();
+      const doc = new DOMParser().parseFromString(text, 'application/xml');
+      // basic validation
+      if (!doc.querySelector('score-partwise')) {
+        alert('This file does not look like MusicXML (score-partwise).');
+        return;
+      }
+      pushUndo();
+      musicXMLDoc = doc;
+      selectedMeasureIdx = 0;
+      render();
+      setStatus('Imported ' + (f.name || 'MusicXML'));
+    }
+
+    function exportMusicXML() {
+      const xml = new XMLSerializer().serializeToString(musicXMLDoc);
+      const blob = new Blob([xml], { type: 'application/vnd.recordare.musicxml+xml' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'sheetlab.musicxml';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 100);
+      setStatus('Exported MusicXML.');
+    }
+
+    // --- Undo/Redo ---
+    function pushUndo() {
+      const xml = new XMLSerializer().serializeToString(musicXMLDoc);
+      undoStack.push(xml);
+      // Clear redo when new action performed
+      redoStack = [];
+    }
+
+    function undo() {
+      if (!undoStack.length) return;
+      const xml = undoStack.pop();
+      const cur = new XMLSerializer().serializeToString(musicXMLDoc);
+      redoStack.push(cur);
+      musicXMLDoc = new DOMParser().parseFromString(xml, 'application/xml');
+      render();
+      setStatus('Undid last change.');
+    }
+    function redo() {
+      if (!redoStack.length) return;
+      const xml = redoStack.pop();
+      const cur = new XMLSerializer().serializeToString(musicXMLDoc);
+      undoStack.push(cur);
+      musicXMLDoc = new DOMParser().parseFromString(xml, 'application/xml');
+      render();
+      setStatus('Redid change.');
+    }
+
+    // --- Playback with Tone.js ---
+    let synth = null;
+    let playing = false;
+    async function ensureSynth() {
+      if (!synth) {
+        await Tone.start();
+        synth = new Tone.PolySynth(Tone.Synth).toDestination();
+      }
+    }
+    async function togglePlay() {
+      if (playing) stopPlayback(); else playScore();
+    }
+    async function playScore(options={ mode: 'all' }) {
+      await ensureSynth();
+      const bpm = parseInt($('#tempo').value, 10) || 100;
+      const tpm = ticksPerMeasure();
+      const div = divisions();
+  // MusicXML durations are expressed in "divisions" per quarter note.
+  // Convert 1 division (tick) to milliseconds correctly.
+  const msPerTick = (60_000 / bpm) / div;
+      const schedule = [];
+      // Flatten notes
+      const startMeasure = options.mode === 'selected' || options.mode === 'fromSelected' ? selectedMeasureIdx : 0;
+      const endMeasure = options.mode === 'selected' ? selectedMeasureIdx : getMeasures().length - 1;
+      getMeasures().forEach((m, mi) => {
+        if (mi < startMeasure || mi > endMeasure) return;
+        let offsetTicks = 0;
+        const notes = Array.from(m.querySelectorAll(':scope > note'));
+        for (const n of notes) {
+          const dur = parseInt(n.querySelector('duration')?.textContent || '0',10);
+          const rest = !!n.querySelector('rest');
+          const chordCont = !!n.querySelector('chord');
+          if (!rest) {
+            const step = n.querySelector('step')?.textContent || 'C';
+            const alter = parseInt(n.querySelector('alter')?.textContent || '0', 10);
+            const octave = parseInt(n.querySelector('octave')?.textContent || '4', 10);
+            const midi = stepAccOctToMidi(step, alter, octave) + transposeSemis;
+            const freq = Tone.Frequency(midi, 'midi');
+            schedule.push({ timeMs: (mi * tpm + offsetTicks) * msPerTick, durMs: dur * msPerTick, freq });
+          }
+          if (!chordCont) offsetTicks += dur; // advance only on leading notes
+        }
+      });
+      if (!schedule.length) return;
+      playing = true;
+      $('#status').textContent = 'Playing… (Space to stop)';
+      const start = performance.now();
+      function tick() {
+        if (!playing) return;
+        const now = performance.now() - start;
+        // play due notes
+        for (const ev of schedule) {
+          if (!ev._played && now >= ev.timeMs) {
+            ev._played = true;
+            synth.triggerAttackRelease(ev.freq, ev.durMs / 1000);
+          }
+        }
+        if (now < schedule[schedule.length - 1].timeMs + 1000) {
+          requestAnimationFrame(tick);
+        } else {
+          playing = false;
+          $('#status').textContent = 'Ready.';
+        }
+      }
+      requestAnimationFrame(tick);
+    }
+    function stopPlayback() {
+      playing = false;
+      if (synth) synth.releaseAll?.();
+      setStatus('Stopped.');
+    }
+
+    // --- UI sync ---
+  function updateKeyAndTimeSelectors() {
+      const fifths = parseInt(getAttributes(getMeasures()[0]).querySelector('key > fifths')?.textContent || '0',10);
+      $('#selectKey').value = String(fifths);
+      const t = timeSig();
+      $('#selectTime').value = `${t.beats}/${t.beatType}`;
+    }
+
+    // --- Render hooks ---
+    // After each render, try to attach click handlers to notes to open their measure in editor
+    async function postRenderHooks() {
+      const svg = document.querySelector('#score svg');
+      if (!svg) return;
+      // Add cursor and listeners to measure groups
+      const groups = Array.from(svg.querySelectorAll('g[id^="measure"], g.measure-container, g.osmd-measure')); // try common patterns
+      groups.forEach((g, i) => {
+        g.style.cursor = 'pointer';
+        g.addEventListener('click', () => selectMeasure(Math.min(i, getMeasures().length-1)));
+        // Enable dropping piano keys
+        g.addEventListener('dragover', (ev) => { ev.preventDefault(); });
+        g.addEventListener('drop', (ev) => {
+          ev.preventDefault();
+          const data = ev.dataTransfer?.getData('text/plain');
+          if (!data) return;
+          const m = /PITCH:([A-G]#?|[A-G]b?)(\d)/.exec(data);
+          if (!m) return;
+          const step = m[1][0];
+          const acc = m[1].length>1 ? m[1][1] : '';
+          const octave = parseInt(m[2],10);
+          const staff = parseInt($('#selectStaff').value, 10) || 1;
+          const activeDurBtn = $('#paletteDur .active');
+          const d = activeDurBtn ? activeDurBtn.getAttribute('data-dur') : 'q';
+          const token = `${step}${acc}${octave}@${staff}/${d}`;
+          selectMeasure(Math.min(i, getMeasures().length-1));
+          const textarea = $('#measureTokens');
+          const cur = textarea.value.trim();
+          textarea.value = cur ? cur + ', ' + token : token;
+          pushUndo();
+          applyMeasureTokens();
+        });
+      });
+    }
+
+    // Ensure UI shows correct values after render
+    const _render = render;
+    render = async function() {
+  try {
+        const container = $('#score');
+        // If container width is 0, OSMD will render nothing. Provide a sane default.
+        if (container && container.clientWidth === 0) {
+          container.style.width = '800px';
+        }
+  let xml = new XMLSerializer().serializeToString(applyTranspose(musicXMLDoc, transposeSemis, true));
+  // Some OSMD environments dislike DOCTYPE; strip it if present
+  xml = xml.replace(/<!DOCTYPE[\s\S]*?>/i, '');
+        await osmd.load(xml);
+        await osmd.render();
+        container.style.transform = `scale(${zoomPercent/100})`;
+        updateKeyAndTimeSelectors();
+        updateMeasureList();
+        selectMeasure(Math.min(selectedMeasureIdx, getMeasures().length-1));
+        await postRenderHooks();
+      } catch (err) {
+        console.error('OSMD render error:', err);
+        setStatus('Render error: ' + (err?.message || String(err)));
+      }
+    };
+
+    // --- Piano UI ---
+    let selectedPitch = { step:'C', alter:0, octave:4 };
+    function buildPiano() {
+      const cont = $('#piano');
+      if (!cont) return;
+      cont.innerHTML = '';
+      // Build keys from C3 to B5 (3 octaves)
+      const octaves = [3,4,5];
+      const whiteOrder = ['C','D','E','F','G','A','B'];
+      const blackMap = { 'C':'C#', 'D':'D#', 'F':'F#', 'G':'G#', 'A':'A#' };
+      for (const oct of octaves) {
+        for (const w of whiteOrder) {
+          const key = document.createElement('div');
+          key.className = 'key white';
+          key.title = `${w}${oct}`;
+          key.setAttribute('role','button');
+          key.setAttribute('tabindex','0');
+          key.dataset.pitch = `${w}${oct}`;
+          key.draggable = true;
+          key.addEventListener('click', () => selectKeyPitch(`${w}${oct}`));
+          key.addEventListener('dragstart', (ev) => onKeyDragStart(ev, `${w}${oct}`));
+          cont.appendChild(key);
+          // place black key except after E and B
+          if (blackMap[w]) {
+            const b = document.createElement('div');
+            b.className = 'key black';
+            b.title = `${blackMap[w]}${oct}`;
+            b.dataset.pitch = `${blackMap[w]}${oct}`;
+            b.draggable = true;
+            b.addEventListener('click', () => selectKeyPitch(`${blackMap[w]}${oct}`));
+            b.addEventListener('dragstart', (ev) => onKeyDragStart(ev, `${blackMap[w]}${oct}`));
+            cont.appendChild(b);
+          }
+        }
+      }
+      highlightSelectedKey();
+    }
+    function onKeyDragStart(ev, text) {
+      ev.dataTransfer?.setData('text/plain', `PITCH:${text}`);
+      ev.dataTransfer?.setDragImage?.(document.createElement('div'), 0, 0);
+    }
+    function selectKeyPitch(text) {
+      const m = /^([A-G])(#|b)?(\d)$/.exec(text);
+      if (!m) return;
+      selectedPitch = { step: m[1], alter: m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0, octave: parseInt(m[3],10) };
+      $('#octave').value = String(selectedPitch.octave);
+      highlightSelectedKey();
+    }
+    function highlightSelectedKey() {
+      $$('#piano .key').forEach(k => k.setAttribute('aria-selected','false'));
+      const acc = selectedPitch.alter === 1 ? '#' : selectedPitch.alter === -1 ? 'b' : '';
+      const sel = $(`#piano .key[data-pitch="${selectedPitch.step}${acc}${selectedPitch.octave}"]`);
+      sel?.setAttribute('aria-selected','true');
+    }
+
+  </script>
+</body>
+</html>
