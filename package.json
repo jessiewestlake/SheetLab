@@ -1,0 +1,16 @@
+{
+  "name": "sheetlab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "serve": "http-server -p 5173 -c-1 ."
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.46.0",
+    "fast-xml-parser": "^4.4.1",
+    "http-server": "^14.1.1"
+  }
+}

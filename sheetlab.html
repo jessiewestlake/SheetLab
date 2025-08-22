@@ -530,6 +530,18 @@
       const part = getPart();
       const m = musicXMLDoc.createElement('measure');
       m.setAttribute('number', String(getMeasures().length + 1));
+      // Copy non-note structural elements from measure 1 (print, attributes, directions, etc.)
+      const first = getMeasures()[0];
+      if (first) {
+        const w = first.getAttribute('width');
+        if (w) m.setAttribute('width', w);
+        Array.from(first.children).forEach(ch => {
+          const tag = ch.tagName.toLowerCase();
+          if (tag !== 'note' && tag !== 'backup' && tag !== 'forward') {
+            m.appendChild(ch.cloneNode(true));
+          }
+        });
+      }
       const rest = musicXMLDoc.createElement('note');
       rest.appendChild(musicXMLDoc.createElement('rest'));
       const dur = musicXMLDoc.createElement('duration'); dur.textContent = String(ticksPerMeasure());
@@ -822,8 +834,8 @@
     }
 
     function tokensToMeasure(tokens, measureEl) {
-      // Clear existing notes and timeline controls
-      Array.from(measureEl.querySelectorAll(':scope > note, :scope > backup, :scope > forward')).forEach(n => n.remove());
+  // Clear existing notes and timeline controls; preserve structural elements
+  Array.from(measureEl.querySelectorAll(':scope > note, :scope > backup, :scope > forward')).forEach(n => n.remove());
       const totalNeeded = ticksPerMeasure();
       // Build per-voice groups (cross-staff voices are kept together)
       const groups = new Map(); // key: voice number (string) -> { nodes: Node[], total: number }
@@ -1248,6 +1260,17 @@
       const sel = $(`#piano .key[data-pitch="${selectedPitch.step}${acc}${selectedPitch.octave}"]`);
       sel?.setAttribute('aria-selected','true');
     }
+
+      // --- Test hooks (exposed for automated tests) ---
+      window.sheetlabTest = {
+        exportXML: () => new XMLSerializer().serializeToString(musicXMLDoc),
+        importXML: (xml) => { musicXMLDoc = new DOMParser().parseFromString(xml, 'application/xml'); selectedMeasureIdx = 0; render(); },
+        getMeasureXML: (idx) => {
+          const ms = getMeasures();
+          const el = ms[idx];
+          return el ? new XMLSerializer().serializeToString(el) : '';
+        }
+      };
 
   </script>
 </body>
