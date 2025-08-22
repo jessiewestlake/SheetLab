@@ -544,41 +544,50 @@
       getMeasures().forEach(fillOrTrimMeasure);
     }
 
+    function getNoteStaff(noteEl) {
+      return parseInt(noteEl.querySelector('staff')?.textContent || '1', 10) || 1;
+    }
+
+    function createRestNote(duration, staffVal) {
+      const rest = musicXMLDoc.createElement('note');
+      rest.appendChild(musicXMLDoc.createElement('rest'));
+      const dur = musicXMLDoc.createElement('duration'); dur.textContent = String(duration); rest.appendChild(dur);
+      const type = musicXMLDoc.createElement('type'); type.textContent = typeFromTicks(duration); rest.appendChild(type);
+      const staffEl = musicXMLDoc.createElement('staff'); staffEl.textContent = String(staffVal || 1); rest.appendChild(staffEl);
+      return rest;
+    }
+
     function fillOrTrimMeasure(measureEl) {
-      // Sum durations advancing only on non-chord-leading notes
-      let total = 0;
-      const notes = Array.from(measureEl.querySelectorAll(':scope > note'));
-      for (const n of notes) {
-        const isChordContinuation = !!n.querySelector('chord');
-        if (!isChordContinuation) total += parseInt(n.querySelector('duration')?.textContent || '0', 10);
-      }
       const tpm = ticksPerMeasure();
-      if (total < tpm) {
-        const rest = musicXMLDoc.createElement('note');
-        rest.appendChild(musicXMLDoc.createElement('rest'));
-        const dur = musicXMLDoc.createElement('duration'); dur.textContent = String(tpm - total);
-        rest.appendChild(dur);
-        const type = musicXMLDoc.createElement('type'); type.textContent = DUR_NAME[tpm - total] || 'quarter';
-        rest.appendChild(type);
-        measureEl.appendChild(rest);
-      } else if (total > tpm) {
-        // Remove from end until <= tpm
-        let running = total;
-        for (let i = notes.length - 1; i >= 0 && running > tpm; i--) {
-          const n = notes[i];
-          const d = parseInt(n.querySelector('duration')?.textContent || '0', 10);
+      const notes = Array.from(measureEl.querySelectorAll(':scope > note'));
+      const staffSet = new Set([1,2]);
+      // If measure explicitly uses other staff numbers, include them
+      notes.forEach(n => staffSet.add(getNoteStaff(n)));
+      for (const staffVal of staffSet) {
+        let total = 0;
+        for (const n of notes) {
           const isChordContinuation = !!n.querySelector('chord');
-          n.remove();
-          if (!isChordContinuation) running -= d;
+          if (getNoteStaff(n) === staffVal && !isChordContinuation) {
+            total += parseInt(n.querySelector('duration')?.textContent || '0', 10);
+          }
         }
-        if (running < tpm) {
-          const rest = musicXMLDoc.createElement('note');
-          rest.appendChild(musicXMLDoc.createElement('rest'));
-          const dur = musicXMLDoc.createElement('duration'); dur.textContent = String(tpm - running);
-          rest.appendChild(dur);
-          const type = musicXMLDoc.createElement('type'); type.textContent = DUR_NAME[tpm - running] || 'quarter';
-          rest.appendChild(type);
-          const measureEl2 = measureEl; measureEl2.appendChild(rest);
+        if (total < tpm) {
+          const restDur = tpm - total;
+          measureEl.appendChild(createRestNote(restDur, staffVal));
+        } else if (total > tpm) {
+          let running = total;
+          for (let i = notes.length - 1; i >= 0 && running > tpm; i--) {
+            const n = notes[i];
+            if (getNoteStaff(n) !== staffVal) continue;
+            const d = parseInt(n.querySelector('duration')?.textContent || '0', 10);
+            const isChordContinuation = !!n.querySelector('chord');
+            n.remove();
+            if (!isChordContinuation) running -= d;
+          }
+          if (running < tpm) {
+            const restDur = tpm - running;
+            measureEl.appendChild(createRestNote(restDur, staffVal));
+          }
         }
       }
     }
@@ -795,7 +804,8 @@
       // Clear existing notes
       Array.from(measureEl.querySelectorAll(':scope > note')).forEach(n => n.remove());
       const totalNeeded = ticksPerMeasure();
-      let total = 0;
+      const totalsByStaff = new Map(); // staff -> ticks
+      const inc = (staff, dur) => { totalsByStaff.set(staff, (totalsByStaff.get(staff) || 0) + dur); };
       for (const tok of tokens) {
         const events = parseToken(tok);
         for (const ev of events) {
@@ -808,7 +818,7 @@
             if (ev.tieStart) { const tie = musicXMLDoc.createElement('tie'); tie.setAttribute('type','start'); noteEl.appendChild(tie); }
             if (ev.tieStop) { const tie = musicXMLDoc.createElement('tie'); tie.setAttribute('type','stop'); noteEl.appendChild(tie); }
             measureEl.appendChild(noteEl);
-            total += ev.duration;
+            inc(ev.staff, ev.duration);
           } else if (ev.kind === 'note') {
             const noteEl = musicXMLDoc.createElement('note');
             const pitch = musicXMLDoc.createElement('pitch');
@@ -822,7 +832,7 @@
             if (ev.tieStart) { const tie = musicXMLDoc.createElement('tie'); tie.setAttribute('type','start'); noteEl.appendChild(tie); }
             if (ev.tieStop) { const tie = musicXMLDoc.createElement('tie'); tie.setAttribute('type','stop'); noteEl.appendChild(tie); }
             measureEl.appendChild(noteEl);
-            total += ev.duration;
+            inc(ev.staff, ev.duration);
           } else if (ev.kind === 'chord') {
             // Leading note first
             const makeNote = (p, isChordCont=false) => {
@@ -845,11 +855,16 @@
             for (const p of rest) {
               measureEl.appendChild(makeNote(p, true));
             }
-            total += ev.duration; // advance only once for the chord
+            inc(ev.staff, ev.duration);
           }
         }
       }
-      if (total > totalNeeded) throw new Error(`Measure overflow by ${total-totalNeeded} ticks; adjust durations.`);
+      // Validate per staff
+      for (const [staff, total] of totalsByStaff.entries()) {
+        if (total > totalNeeded) {
+          throw new Error(`Measure overflow on staff ${staff} by ${total - totalNeeded} ticks; adjust durations.`);
+        }
+      }
       // if underfull, filled later
     }
 
