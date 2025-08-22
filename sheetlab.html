@@ -270,6 +270,18 @@
                 <option value="2">Bass (2)</option>
               </select>
             </span>
+            <span class="chip">Voice
+              <select id="selectVoice" title="Choose voice (1–8)">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+                <option value="8">8</option>
+              </select>
+            </span>
           </div>
           <div style="height:10px"></div>
           <div>
@@ -299,7 +311,7 @@
         <div class="pane-body">
           <p class="help">
             Edit the selected measure using simple tokens. Notes: <span class="kbd">C4/q</span>, <span class="kbd">D#4/e</span>. Rests: <span class="kbd">R/q</span>.
-            Staff suffix: <span class="kbd">@1</span> treble, <span class="kbd">@2</span> bass, e.g. <span class="kbd">C4@1/q</span>, <span class="kbd">R@2/h</span>.
+            Staff suffix: <span class="kbd">@1</span> treble, <span class="kbd">@2</span> bass, e.g. <span class="kbd">C4@1/q</span>, <span class="kbd">R@2/h</span>. Voice (optional): <span class="kbd">@1v2</span>.
             Chords: <span class="kbd">[C4,E4,G4]@1/q</span>. Ties: append <span class="kbd">~e</span> like <span class="kbd">C4/q~e</span> or <span class="kbd">[C4,E4]@2/h~q</span>.
             Durations: <span class="kbd">w, h, q, e, s</span>. Comma-separated tokens fill the measure.
           </p>
@@ -548,37 +560,42 @@
       return parseInt(noteEl.querySelector('staff')?.textContent || '1', 10) || 1;
     }
 
-    function createRestNote(duration, staffVal) {
+    function createRestNote(duration, staffVal, voiceVal) {
       const rest = musicXMLDoc.createElement('note');
       rest.appendChild(musicXMLDoc.createElement('rest'));
       const dur = musicXMLDoc.createElement('duration'); dur.textContent = String(duration); rest.appendChild(dur);
       const type = musicXMLDoc.createElement('type'); type.textContent = typeFromTicks(duration); rest.appendChild(type);
       const staffEl = musicXMLDoc.createElement('staff'); staffEl.textContent = String(staffVal || 1); rest.appendChild(staffEl);
+      if (voiceVal) { const voiceEl = musicXMLDoc.createElement('voice'); voiceEl.textContent = String(voiceVal); rest.appendChild(voiceEl); }
       return rest;
     }
 
     function fillOrTrimMeasure(measureEl) {
       const tpm = ticksPerMeasure();
       const notes = Array.from(measureEl.querySelectorAll(':scope > note'));
-      const staffSet = new Set([1,2]);
-      // If measure explicitly uses other staff numbers, include them
-      notes.forEach(n => staffSet.add(getNoteStaff(n)));
-      for (const staffVal of staffSet) {
+      // Group by voice only (to support cross-staff within a voice)
+      const groups = new Map(); // key voice -> { notes: Node[] }
+      for (const n of notes) {
+        const v = parseInt(n.querySelector('voice')?.textContent || '1', 10) || 1;
+        if (!groups.has(v)) groups.set(v, { notes: [] });
+        groups.get(v).notes.push(n);
+      }
+      for (const [v, info] of groups.entries()) {
         let total = 0;
-        for (const n of notes) {
+        for (const n of info.notes) {
           const isChordContinuation = !!n.querySelector('chord');
-          if (getNoteStaff(n) === staffVal && !isChordContinuation) {
-            total += parseInt(n.querySelector('duration')?.textContent || '0', 10);
-          }
+          if (!isChordContinuation) total += parseInt(n.querySelector('duration')?.textContent || '0', 10);
         }
         if (total < tpm) {
           const restDur = tpm - total;
-          measureEl.appendChild(createRestNote(restDur, staffVal));
+          // choose last seen staff for this voice
+          let lastStaff = 1;
+          for (let i = info.notes.length - 1; i >= 0; i--) { const s = info.notes[i].querySelector('staff')?.textContent; if (s) { lastStaff = parseInt(s,10) || 1; break; } }
+          measureEl.appendChild(createRestNote(restDur, lastStaff, v));
         } else if (total > tpm) {
           let running = total;
-          for (let i = notes.length - 1; i >= 0 && running > tpm; i--) {
-            const n = notes[i];
-            if (getNoteStaff(n) !== staffVal) continue;
+          for (let i = info.notes.length - 1; i >= 0 && running > tpm; i--) {
+            const n = info.notes[i];
             const d = parseInt(n.querySelector('duration')?.textContent || '0', 10);
             const isChordContinuation = !!n.querySelector('chord');
             n.remove();
@@ -586,7 +603,9 @@
           }
           if (running < tpm) {
             const restDur = tpm - running;
-            measureEl.appendChild(createRestNote(restDur, staffVal));
+            let lastStaff = 1;
+            for (let i = info.notes.length - 1; i >= 0; i--) { const s = info.notes[i]?.querySelector?.('staff')?.textContent; if (s) { lastStaff = parseInt(s,10) || 1; break; } }
+            measureEl.appendChild(createRestNote(restDur, lastStaff, v));
           }
         }
       }
@@ -628,12 +647,11 @@
       $('#msg').textContent = '';
     }
 
-    function applyMeasureTokens() {
+  function applyMeasureTokens() {
       try {
   const input = $('#measureTokens').value.trim();
   const tokens = input.length ? splitTokenList(input) : [];
-        tokensToMeasure(tokens, getMeasures()[selectedMeasureIdx]);
-        fillOrTrimMeasure(getMeasures()[selectedMeasureIdx]);
+    tokensToMeasure(tokens, getMeasures()[selectedMeasureIdx]);
         render();
         setStatus('Measure updated.');
         $('#msg').textContent = '';
@@ -652,12 +670,13 @@
       while (i < notes.length) {
         const n = notes[i];
         const dur = parseInt(n.querySelector('duration')?.textContent || '0',10);
-        const staff = parseInt(n.querySelector('staff')?.textContent || '1', 10);
+  const staff = parseInt(n.querySelector('staff')?.textContent || '1', 10);
+  const voice = parseInt(n.querySelector('voice')?.textContent || '1', 10);
         const isRest = !!n.querySelector('rest');
         const isChordCont = !!n.querySelector('chord');
         if (isChordCont) { i++; continue; }
-        const tieStart = !!n.querySelector('tie[type="start"]');
-        const tieStop = !!n.querySelector('tie[type="stop"]');
+  const tieStart = !!(n.querySelector('tie[type="start"]') || n.querySelector('notations tied[type="start"]'));
+  const tieStop = !!(n.querySelector('tie[type="stop"]') || n.querySelector('notations tied[type="stop"]'));
         // Collect chord notes at this position (including leading)
         const chordPitches = [];
         const collect = (noteEl) => {
@@ -675,8 +694,9 @@
           j++;
         }
         const sym = durationSymbolFromNote(n);
+        const staffVoiceSuffix = voice && voice !== 1 ? `@${staff}v${voice}` : `@${staff}`;
         if (isRest) {
-          tokens.push(`R@${staff}/${sym}`);
+          tokens.push(`R${staffVoiceSuffix}/${sym}`);
         } else if (tieStop && !tieStart) {
           // Append duration to previous token (ties extend previous)
           if (tokens.length) {
@@ -684,16 +704,16 @@
           } else {
             // Fallback if no previous token (malformed), emit base
             const base = (chordPitches.length > 1)
-              ? `[${chordPitches.join(',')}]@${staff}/${sym}`
-              : `${chordPitches[0]}@${staff}/${sym}`;
+              ? `[${chordPitches.join(',')}]${staffVoiceSuffix}/${sym}`
+              : `${chordPitches[0]}${staffVoiceSuffix}/${sym}`;
             tokens.push(base);
           }
         } else {
           if (chordPitches.length > 1) {
-            const base = `[${chordPitches.join(',')}]@${staff}/${sym}`;
+            const base = `[${chordPitches.join(',')}]${staffVoiceSuffix}/${sym}`;
             tokens.push(base + (tieStart ? '~' : ''));
           } else {
-            const base = `${chordPitches[0]}@${staff}/${sym}`;
+            const base = `${chordPitches[0]}${staffVoiceSuffix}/${sym}`;
             tokens.push(base + (tieStart ? '~' : ''));
           }
         }
@@ -740,9 +760,9 @@
 
     function parseToken(tok) {
       // Supported forms:
-      // R@2/q, R/q
-      // C#4@1/q
-      // [C4,E4,G4]@2/q
+      // R@2/q, R/q, R@2v2/q
+      // C#4@1/q, C#4@1v2/q
+      // [C4,E4,G4]@2/q, [C4,E4]@2v2/q
       // Ties: append ~e like C4/q~e or [C4,E4]@1/q~e
       const err = (m) => { throw new Error(m + ': ' + tok); };
       const [lhsRaw, rhsRaw] = tok.split('/');
@@ -753,20 +773,21 @@
 
       // Parse staff suffix @N
       let staff = 1;
+      let voice = 1;
       let noteSpec = lhs;
-      const mStaff = /^(.*)@([12])$/.exec(lhs);
-      if (mStaff) { noteSpec = mStaff[1]; staff = parseInt(mStaff[2],10); }
+  const mStaffVoice = /^(.*)@([12])(?:v(\d+))?$/.exec(lhs);
+      if (mStaffVoice) { noteSpec = mStaffVoice[1]; staff = parseInt(mStaffVoice[2],10); voice = mStaffVoice[3] ? parseInt(mStaffVoice[3],10) : 1; }
 
       if (/^R$/i.test(noteSpec)) {
-        return durations.map((d,i) => ({ kind:'rest', staff, duration:d, tieStart: i===0 && durations.length>1, tieStop: i===durations.length-1 && durations.length>1 }));
+        return durations.map((d,i) => ({ kind:'rest', staff, voice, duration:d, tieStart: i===0 && durations.length>1, tieStop: i===durations.length-1 && durations.length>1 }));
       }
       if (noteSpec.startsWith('[')) {
         const inner = noteSpec.replace(/^\[/,'').replace(/\]$/,'');
         const pitches = inner.split(',').map(s => s.trim()).map(parsePitch);
-        return durations.map((d,i) => ({ kind:'chord', staff, duration:d, pitches, tieStart: i===0 && durations.length>1, tieStop: i===durations.length-1 && durations.length>1 }));
+        return durations.map((d,i) => ({ kind:'chord', staff, voice, duration:d, pitches, tieStart: i===0 && durations.length>1, tieStop: i===durations.length-1 && durations.length>1 }));
       }
       const pitch = parsePitch(noteSpec);
-      return durations.map((d,i) => ({ kind:'note', staff, duration:d, pitch, tieStart: i===0 && durations.length>1, tieStop: i===durations.length-1 && durations.length>1 }));
+      return durations.map((d,i) => ({ kind:'note', staff, voice, duration:d, pitch, tieStart: i===0 && durations.length>1, tieStop: i===durations.length-1 && durations.length>1 }));
     }
 
     function parsePitch(text) {
@@ -801,71 +822,92 @@
     }
 
     function tokensToMeasure(tokens, measureEl) {
-      // Clear existing notes
-      Array.from(measureEl.querySelectorAll(':scope > note')).forEach(n => n.remove());
+      // Clear existing notes and timeline controls
+      Array.from(measureEl.querySelectorAll(':scope > note, :scope > backup, :scope > forward')).forEach(n => n.remove());
       const totalNeeded = ticksPerMeasure();
-      const totalsByStaff = new Map(); // staff -> ticks
-      const inc = (staff, dur) => { totalsByStaff.set(staff, (totalsByStaff.get(staff) || 0) + dur); };
+      // Build per-voice groups (cross-staff voices are kept together)
+      const groups = new Map(); // key: voice number (string) -> { nodes: Node[], total: number }
+      const ensureGroup = (v) => { const k = String(v || 1); if (!groups.has(k)) groups.set(k, { nodes: [], total: 0 }); return groups.get(k); };
+
+      const appendNoteNode = (ev, makeChord=false, pitchObj=null) => {
+        const noteEl = musicXMLDoc.createElement('note');
+        if (makeChord) noteEl.appendChild(musicXMLDoc.createElement('chord'));
+        if (ev.kind === 'rest') {
+          noteEl.appendChild(musicXMLDoc.createElement('rest'));
+        } else {
+          const pitch = musicXMLDoc.createElement('pitch');
+          const stepEl = musicXMLDoc.createElement('step'); stepEl.textContent = pitchObj?.step || ev.pitch.step; pitch.appendChild(stepEl);
+          const altVal = pitchObj ? pitchObj.alter : ev.pitch.alter;
+          if (altVal) { const alt = musicXMLDoc.createElement('alter'); alt.textContent = String(altVal); pitch.appendChild(alt); }
+          const octEl = musicXMLDoc.createElement('octave'); octEl.textContent = String(pitchObj?.octave || ev.pitch.octave); pitch.appendChild(octEl);
+          noteEl.appendChild(pitch);
+        }
+        const dur = musicXMLDoc.createElement('duration'); dur.textContent = String(ev.duration); noteEl.appendChild(dur);
+        const type = musicXMLDoc.createElement('type'); type.textContent = typeFromTicks(ev.duration); noteEl.appendChild(type);
+        const staffEl = musicXMLDoc.createElement('staff'); staffEl.textContent = String(ev.staff); noteEl.appendChild(staffEl);
+        if (ev.tieStart || ev.tieStop) {
+          const not = musicXMLDoc.createElement('notations');
+          const tied = musicXMLDoc.createElement('tied');
+          tied.setAttribute('type', ev.tieStart ? 'start' : 'stop');
+          not.appendChild(tied);
+          noteEl.appendChild(not);
+          const tie = musicXMLDoc.createElement('tie'); tie.setAttribute('type', ev.tieStart ? 'start' : 'stop'); noteEl.appendChild(tie);
+        }
+        const voiceEl = musicXMLDoc.createElement('voice'); voiceEl.textContent = String(ev.voice || 1); noteEl.appendChild(voiceEl);
+        return noteEl;
+      };
+
       for (const tok of tokens) {
         const events = parseToken(tok);
         for (const ev of events) {
+          const g = ensureGroup(ev.voice || 1);
           if (ev.kind === 'rest') {
-            const noteEl = musicXMLDoc.createElement('note');
-            noteEl.appendChild(musicXMLDoc.createElement('rest'));
-            const dur = musicXMLDoc.createElement('duration'); dur.textContent = String(ev.duration); noteEl.appendChild(dur);
-            const type = musicXMLDoc.createElement('type'); type.textContent = typeFromTicks(ev.duration); noteEl.appendChild(type);
-            const staffEl = musicXMLDoc.createElement('staff'); staffEl.textContent = String(ev.staff); noteEl.appendChild(staffEl);
-            if (ev.tieStart) { const tie = musicXMLDoc.createElement('tie'); tie.setAttribute('type','start'); noteEl.appendChild(tie); }
-            if (ev.tieStop) { const tie = musicXMLDoc.createElement('tie'); tie.setAttribute('type','stop'); noteEl.appendChild(tie); }
-            measureEl.appendChild(noteEl);
-            inc(ev.staff, ev.duration);
+            g.nodes.push(appendNoteNode(ev));
+            g.total += ev.duration;
           } else if (ev.kind === 'note') {
-            const noteEl = musicXMLDoc.createElement('note');
-            const pitch = musicXMLDoc.createElement('pitch');
-            const stepEl = musicXMLDoc.createElement('step'); stepEl.textContent = ev.pitch.step; pitch.appendChild(stepEl);
-            if (ev.pitch.alter) { const alt = musicXMLDoc.createElement('alter'); alt.textContent = String(ev.pitch.alter); pitch.appendChild(alt); }
-            const octEl = musicXMLDoc.createElement('octave'); octEl.textContent = String(ev.pitch.octave); pitch.appendChild(octEl);
-            noteEl.appendChild(pitch);
-            const dur = musicXMLDoc.createElement('duration'); dur.textContent = String(ev.duration); noteEl.appendChild(dur);
-            const type = musicXMLDoc.createElement('type'); type.textContent = typeFromTicks(ev.duration); noteEl.appendChild(type);
-            const staffEl = musicXMLDoc.createElement('staff'); staffEl.textContent = String(ev.staff); noteEl.appendChild(staffEl);
-            if (ev.tieStart) { const tie = musicXMLDoc.createElement('tie'); tie.setAttribute('type','start'); noteEl.appendChild(tie); }
-            if (ev.tieStop) { const tie = musicXMLDoc.createElement('tie'); tie.setAttribute('type','stop'); noteEl.appendChild(tie); }
-            measureEl.appendChild(noteEl);
-            inc(ev.staff, ev.duration);
+            g.nodes.push(appendNoteNode(ev));
+            g.total += ev.duration;
           } else if (ev.kind === 'chord') {
-            // Leading note first
-            const makeNote = (p, isChordCont=false) => {
-              const noteEl = musicXMLDoc.createElement('note');
-              if (isChordCont) { noteEl.appendChild(musicXMLDoc.createElement('chord')); }
-              const pitch = musicXMLDoc.createElement('pitch');
-              const stepEl = musicXMLDoc.createElement('step'); stepEl.textContent = p.step; pitch.appendChild(stepEl);
-              if (p.alter) { const alt = musicXMLDoc.createElement('alter'); alt.textContent = String(p.alter); pitch.appendChild(alt); }
-              const octEl = musicXMLDoc.createElement('octave'); octEl.textContent = String(p.octave); pitch.appendChild(octEl);
-              noteEl.appendChild(pitch);
-              const dur = musicXMLDoc.createElement('duration'); dur.textContent = String(ev.duration); noteEl.appendChild(dur);
-              const type = musicXMLDoc.createElement('type'); type.textContent = typeFromTicks(ev.duration); noteEl.appendChild(type);
-              const staffEl = musicXMLDoc.createElement('staff'); staffEl.textContent = String(ev.staff); noteEl.appendChild(staffEl);
-              if (ev.tieStart) { const tie = musicXMLDoc.createElement('tie'); tie.setAttribute('type','start'); noteEl.appendChild(tie); }
-              if (ev.tieStop) { const tie = musicXMLDoc.createElement('tie'); tie.setAttribute('type','stop'); noteEl.appendChild(tie); }
-              return noteEl;
-            };
+            // Leading note followed by chord continuation notes
             const [lead, ...rest] = ev.pitches;
-            measureEl.appendChild(makeNote(lead, false));
+            // lead
+            g.nodes.push(appendNoteNode({ ...ev, kind:'note', pitch: lead }));
+            // continuations
             for (const p of rest) {
-              measureEl.appendChild(makeNote(p, true));
+              const node = appendNoteNode({ ...ev, kind:'note', pitch: p }, true, p);
+              g.nodes.push(node);
             }
-            inc(ev.staff, ev.duration);
+            g.total += ev.duration;
           }
         }
       }
-      // Validate per staff
-      for (const [staff, total] of totalsByStaff.entries()) {
-        if (total > totalNeeded) {
-          throw new Error(`Measure overflow on staff ${staff} by ${total - totalNeeded} ticks; adjust durations.`);
+      // Validate and fill underfull groups with rests
+      for (const [vKey, g] of groups.entries()) {
+        if (g.total > totalNeeded) {
+          throw new Error(`Measure overflow in voice ${vKey} by ${g.total - totalNeeded} ticks; adjust durations.`);
+        }
+        if (g.total < totalNeeded) {
+          const restDur = totalNeeded - g.total;
+          // Use last seen staff for this voice if available, else default to 1
+          let lastStaff = 1;
+          for (let i=g.nodes.length-1;i>=0;i--) { const s = g.nodes[i].querySelector('staff')?.textContent; if (s) { lastStaff = parseInt(s,10) || 1; break; } }
+          const restEv = { kind:'rest', staff:lastStaff, voice: parseInt(vKey,10) || 1, duration: restDur };
+          g.nodes.push(appendNoteNode(restEv));
+          g.total += restDur;
         }
       }
-      // if underfull, filled later
+      // Append groups with backups between them
+      const sortedKeys = Array.from(groups.keys()).sort((a,b) => parseInt(a,10)-parseInt(b,10));
+      sortedKeys.forEach((k, idx) => {
+        const g = groups.get(k);
+        for (const n of g.nodes) measureEl.appendChild(n);
+        if (idx < sortedKeys.length - 1) {
+          const backup = musicXMLDoc.createElement('backup');
+          const dur = musicXMLDoc.createElement('duration'); dur.textContent = String(totalNeeded);
+          backup.appendChild(dur);
+          measureEl.appendChild(backup);
+        }
+      });
     }
 
     // Palette insertion (append to current measure)
@@ -877,14 +919,15 @@
       const acc = accBtn ? accBtn.getAttribute('data-acc') : 'n';
       const octave = parseInt($('#octave').value, 10);
       const staff = parseInt($('#selectStaff').value, 10) || 1;
+      const voice = parseInt($('#selectVoice').value, 10) || 1;
       let tok;
-      if (d === 'r') tok = `R@${staff}/${d==='r' ? 'q' : d}`; // default rest quarter if 'r'
+      if (d === 'r') tok = `R@${staff}${voice!==1?`v${voice}`:''}/${d==='r' ? 'q' : d}`; // default rest quarter if 'r'
       if (d !== 'r') {
         const baseStep = selectedPitch?.step || 'C';
         const baseAlter = selectedPitch?.alter ?? (acc==='n'?0: acc==='#'?1:-1);
         const baseOct = selectedPitch?.octave ?? octave;
         const accSym = baseAlter === 1 ? '#' : baseAlter === -1 ? 'b' : '';
-        tok = `${baseStep}${accSym}${baseOct}@${staff}/${d}`;
+        tok = `${baseStep}${accSym}${baseOct}@${staff}${voice!==1?`v${voice}`:''}/${d}`;
       }
       // place token at end of measure editor text and apply
       const textarea = $('#measureTokens');
@@ -1031,21 +1074,26 @@
       const endMeasure = options.mode === 'selected' ? selectedMeasureIdx : getMeasures().length - 1;
       getMeasures().forEach((m, mi) => {
         if (mi < startMeasure || mi > endMeasure) return;
-        let offsetTicks = 0;
+        // Maintain offsets per staff+voice for overlapping voices
+        const offsets = new Map(); // key "s:v" -> ticks
         const notes = Array.from(m.querySelectorAll(':scope > note'));
         for (const n of notes) {
           const dur = parseInt(n.querySelector('duration')?.textContent || '0',10);
           const rest = !!n.querySelector('rest');
           const chordCont = !!n.querySelector('chord');
+          const staff = parseInt(n.querySelector('staff')?.textContent || '1', 10) || 1;
+          const voice = parseInt(n.querySelector('voice')?.textContent || '1', 10) || 1;
+          const key = `v${voice}`;
+          const curOff = offsets.get(key) || 0;
           if (!rest) {
             const step = n.querySelector('step')?.textContent || 'C';
             const alter = parseInt(n.querySelector('alter')?.textContent || '0', 10);
             const octave = parseInt(n.querySelector('octave')?.textContent || '4', 10);
             const midi = stepAccOctToMidi(step, alter, octave) + transposeSemis;
             const freq = Tone.Frequency(midi, 'midi');
-            schedule.push({ timeMs: (mi * tpm + offsetTicks) * msPerTick, durMs: dur * msPerTick, freq });
+            schedule.push({ timeMs: (mi * tpm + curOff) * msPerTick, durMs: dur * msPerTick, freq });
           }
-          if (!chordCont) offsetTicks += dur; // advance only on leading notes
+          if (!chordCont) offsets.set(key, curOff + dur); // advance only on leading notes for that voice
         }
       });
       if (!schedule.length) return;
@@ -1107,9 +1155,10 @@
           const acc = m[1].length>1 ? m[1][1] : '';
           const octave = parseInt(m[2],10);
           const staff = parseInt($('#selectStaff').value, 10) || 1;
+            const voice = parseInt($('#selectVoice').value, 10) || 1;
           const activeDurBtn = $('#paletteDur .active');
           const d = activeDurBtn ? activeDurBtn.getAttribute('data-dur') : 'q';
-          const token = `${step}${acc}${octave}@${staff}/${d}`;
+            const token = `${step}${acc}${octave}@${staff}${voice!==1?`v${voice}`:''}/${d}`;
           selectMeasure(Math.min(i, getMeasures().length-1));
           const textarea = $('#measureTokens');
           const cur = textarea.value.trim();
