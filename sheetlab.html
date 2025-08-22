@@ -663,7 +663,13 @@
       try {
   const input = $('#measureTokens').value.trim();
   const tokens = input.length ? splitTokenList(input) : [];
-    tokensToMeasure(tokens, getMeasures()[selectedMeasureIdx]);
+        // If tokens describe exactly what's already in the measure, don't rewrite (preserve engraving)
+        const current = measureToTokens(getMeasures()[selectedMeasureIdx]);
+        const norm = (arr) => arr.map(s => s.replace(/\s+/g,'').toLowerCase());
+        const same = JSON.stringify(norm(tokens)) === JSON.stringify(norm(current));
+        if (!same) {
+          tokensToMeasure(tokens, getMeasures()[selectedMeasureIdx]);
+        }
         render();
         setStatus('Measure updated.');
         $('#msg').textContent = '';
@@ -838,8 +844,9 @@
   Array.from(measureEl.querySelectorAll(':scope > note, :scope > backup, :scope > forward')).forEach(n => n.remove());
       const totalNeeded = ticksPerMeasure();
       // Build per-voice groups (cross-staff voices are kept together)
-      const groups = new Map(); // key: voice number (string) -> { nodes: Node[], total: number }
-      const ensureGroup = (v) => { const k = String(v || 1); if (!groups.has(k)) groups.set(k, { nodes: [], total: 0 }); return groups.get(k); };
+      const groups = new Map(); // key: voice number (string) -> { nodes: Node[], total: number, entries: any[] }
+      const ensureGroup = (v) => { const k = String(v || 1); if (!groups.has(k)) groups.set(k, { nodes: [], total: 0, entries: [] }); return groups.get(k); };
+      const voiceOffsets = new Map(); // voice -> ticks
 
       const appendNoteNode = (ev, makeChord=false, pitchObj=null) => {
         const noteEl = musicXMLDoc.createElement('note');
@@ -873,24 +880,83 @@
         const events = parseToken(tok);
         for (const ev of events) {
           const g = ensureGroup(ev.voice || 1);
+          const vKey = String(ev.voice || 1);
+          const curOff = voiceOffsets.get(vKey) || 0;
           if (ev.kind === 'rest') {
             g.nodes.push(appendNoteNode(ev));
             g.total += ev.duration;
+            voiceOffsets.set(vKey, curOff + ev.duration);
           } else if (ev.kind === 'note') {
-            g.nodes.push(appendNoteNode(ev));
+            const node = appendNoteNode(ev);
+            g.nodes.push(node);
+            // Stem direction heuristic: odd voice up, even down
+            const stem = musicXMLDoc.createElement('stem'); stem.textContent = ((ev.voice || 1) % 2 === 1) ? 'up' : 'down'; node.appendChild(stem);
+            const t = typeFromTicks(ev.duration);
+            const beamLevel = t === 'eighth' ? 1 : (t === '16th' ? 2 : 0);
+            g.entries.push({ node, start: curOff, duration: ev.duration, beamLevel });
             g.total += ev.duration;
+            voiceOffsets.set(vKey, curOff + ev.duration);
           } else if (ev.kind === 'chord') {
             // Leading note followed by chord continuation notes
             const [lead, ...rest] = ev.pitches;
             // lead
-            g.nodes.push(appendNoteNode({ ...ev, kind:'note', pitch: lead }));
+            const leadNode = appendNoteNode({ ...ev, kind:'note', pitch: lead });
+            g.nodes.push(leadNode);
+            const stem = musicXMLDoc.createElement('stem'); stem.textContent = ((ev.voice || 1) % 2 === 1) ? 'up' : 'down'; leadNode.appendChild(stem);
             // continuations
             for (const p of rest) {
               const node = appendNoteNode({ ...ev, kind:'note', pitch: p }, true, p);
               g.nodes.push(node);
+              // chord continuation shares stem direction (optional to repeat stem)
             }
+            const t = typeFromTicks(ev.duration);
+            const beamLevel = t === 'eighth' ? 1 : (t === '16th' ? 2 : 0);
+            g.entries.push({ node: leadNode, start: curOff, duration: ev.duration, beamLevel });
             g.total += ev.duration;
+            voiceOffsets.set(vKey, curOff + ev.duration);
           }
+        }
+      }
+      // Generate beams per voice: group contiguous beamable notes within beat
+      const beatTicks = ticksPerBeat();
+      function addBeamsForLevel(entries, level) {
+        const beamable = entries.filter(e => e.beamLevel >= level).sort((a,b) => a.start - b.start);
+        let run = [];
+        let lastBeat = null;
+        for (const e of beamable) {
+          const beatIdx = Math.floor(e.start / beatTicks);
+          if (run.length === 0) {
+            run.push(e); lastBeat = beatIdx; continue;
+          }
+          if (beatIdx === lastBeat) {
+            run.push(e);
+          } else {
+            // flush
+            if (run.length >= 2) {
+              run.forEach((ent, i) => {
+                const beam = musicXMLDoc.createElement('beam');
+                beam.setAttribute('number', String(level));
+                beam.textContent = i === 0 ? 'begin' : (i === run.length - 1 ? 'end' : 'continue');
+                ent.node.appendChild(beam);
+              });
+            }
+            run = [e];
+            lastBeat = beatIdx;
+          }
+        }
+        if (run.length >= 2) {
+          run.forEach((ent, i) => {
+            const beam = musicXMLDoc.createElement('beam');
+            beam.setAttribute('number', String(level));
+            beam.textContent = i === 0 ? 'begin' : (i === run.length - 1 ? 'end' : 'continue');
+            ent.node.appendChild(beam);
+          });
+        }
+      }
+      for (const [, g] of groups.entries()) {
+        if (g.entries.length) {
+          addBeamsForLevel(g.entries, 1);
+          addBeamsForLevel(g.entries, 2);
         }
       }
       // Validate and fill underfull groups with rests
@@ -908,7 +974,7 @@
           g.total += restDur;
         }
       }
-      // Append groups with backups between them
+  // Append groups with backups between them
       const sortedKeys = Array.from(groups.keys()).sort((a,b) => parseInt(a,10)-parseInt(b,10));
       sortedKeys.forEach((k, idx) => {
         const g = groups.get(k);
