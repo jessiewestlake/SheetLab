@@ -44,9 +44,11 @@ public class PowerShellUnlockService
             return new UnlockResult(false, "Failed to start PowerShell process");
         }
 
-        await process.WaitForExitAsync(cancellationToken);
-        var output = await process.StandardOutput.ReadToEndAsync();
-        var error = await process.StandardError.ReadToEndAsync();
+        var outputTask = process.StandardOutput.ReadToEndAsync();
+        var errorTask = process.StandardError.ReadToEndAsync();
+        await Task.WhenAll(outputTask, errorTask, process.WaitForExitAsync(cancellationToken));
+        var output = outputTask.Result;
+        var error = errorTask.Result;
 
         if (process.ExitCode == 0)
         {
