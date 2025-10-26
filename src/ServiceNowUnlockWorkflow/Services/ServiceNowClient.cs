@@ -25,10 +25,12 @@ public class ServiceNowClient
     {
         var credentials = await _secretStore.GetBasicAuthAsync(_settings.ServiceNow.CredentialName, cancellationToken);
         var byteArray = System.Text.Encoding.ASCII.GetBytes($"{credentials.UserName}:{credentials.Password}");
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(byteArray));
+        var authHeader = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(byteArray));
 
         var url = $"/api/now/table/incident?sysparm_query={Uri.EscapeDataString(_settings.ServiceNow.Query)}";
-        var response = await _httpClient.GetAsync(url, cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = authHeader;
+        var response = await _httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var payload = await response.Content.ReadFromJsonAsync<ServiceNowResponse>(cancellationToken: cancellationToken);
