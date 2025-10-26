@@ -26,7 +26,7 @@ public class SmtpNotificationService
             Credentials = new NetworkCredential(smtp.UserName, smtp.Password)
         };
 
-        var message = new MailMessage(smtp.FromAddress, incident.CallerEmail)
+        using var message = new MailMessage(smtp.FromAddress, incident.CallerEmail)
         {
             Subject = $"AD Unlock - Incident {incident.Number}",
             Body = $"Hello,\n\nYour AD account unlock request has been {(result.Success ? "completed successfully" : "processed with errors")}" +
