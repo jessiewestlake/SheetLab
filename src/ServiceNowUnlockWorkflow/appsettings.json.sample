@@ -1,0 +1,21 @@
+{
+  "ServiceNow": {
+    "BaseUrl": "https://example.service-now.com",
+    "Query": "category=software^u_request_type=AD Unlock^state=1",
+    "CredentialName": "ServiceNowBasicAuth",
+    "SuccessState": "6",
+    "FailureState": "2"
+  },
+  "PowerShell": {
+    "ScriptPath": "scripts/UnlockAccount.ps1",
+    "ServiceAccountSecretName": "AdServiceAccount"
+  },
+  "Smtp": {
+    "Host": "smtp.example.corp",
+    "Port": 25,
+    "EnableSsl": false,
+    "FromAddress": "it-support@example.corp",
+    "UserName": "",
+    "Password": ""
+  }
+}
