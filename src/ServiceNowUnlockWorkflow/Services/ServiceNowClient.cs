@@ -13,15 +13,12 @@ public class ServiceNowClient
     private readonly SecretStoreBridge _secretStore;
     private readonly ILogger<ServiceNowClient> _logger;
 
-    public ServiceNowClient(IOptions<AppSettings> settings, SecretStoreBridge secretStore, ILogger<ServiceNowClient> logger)
+    public ServiceNowClient(HttpClient httpClient, IOptions<AppSettings> settings, SecretStoreBridge secretStore, ILogger<ServiceNowClient> logger)
     {
+        _httpClient = httpClient;
         _settings = settings.Value;
         _secretStore = secretStore;
         _logger = logger;
-        _httpClient = new HttpClient
-        {
-            BaseAddress = new Uri(_settings.ServiceNow.BaseUrl)
-        };
     }
 
     public async Task<IReadOnlyList<ServiceNowIncident>> GetUnlockIncidentsAsync(CancellationToken cancellationToken)
