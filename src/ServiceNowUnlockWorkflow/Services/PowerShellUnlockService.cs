@@ -30,11 +30,11 @@ public class PowerShellUnlockService
             {
                 "-File",
                 scriptPath,
-                "-UserPrincipalName", userPrincipalName,
-                "-ServiceAccountSecret", serviceAccountSecret
+                "-UserPrincipalName", userPrincipalName
             },
             RedirectStandardOutput = true,
-            RedirectStandardError = true
+            RedirectStandardError = true,
+            EnvironmentVariables = { ["SERVICE_ACCOUNT_SECRET"] = serviceAccountSecret }
         };
 
         _logger.LogInformation("Invoking PowerShell unlock for {User}", userPrincipalName);
